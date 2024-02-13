@@ -12,7 +12,7 @@ To resolve the client packages using pip, add the following to $HOME/.pip/pip.co
 
 ```ini
 [global]
-extra-index-url=https://<jfrog-username>:<jfrog-access-token>@aerospike.jfrog.io/artifactory/api/pypi/ecosystem-python-dev-local/simple 
+extra-index-url=https://aerospike.jfrog.io/artifactory/api/pypi/aerospike-pypi-dev/simple
 ```
 
 ### Install the aerospike_vector using pip
