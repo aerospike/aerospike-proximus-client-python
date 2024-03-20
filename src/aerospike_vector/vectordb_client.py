@@ -29,7 +29,7 @@ class VectorDbClient(object):
             vectordb_channel_provider.VectorDbChannelProvider(
                 seeds, listener_name))
 
-    def put(self, namespace: str, set: str, key: Any, bins: dict[str, Any]):
+    def upsert(self, *, namespace: str, set: str, key: Any, bins: dict[str, Any]):
         """Write a record to vector DB"""
         transact_stub = transact_pb2_grpc.TransactStub(
             self.__channelProvider.getChannel())

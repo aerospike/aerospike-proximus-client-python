@@ -1,7 +1,7 @@
 import sys
 import time
 import grpc
-from typing import Any
+from typing import Any, Optional, Union, List
 
 import google.protobuf.empty_pb2
 
@@ -28,26 +28,29 @@ class VectorDbAdminClient(object):
         self.__channelProvider = vectordb_channel_provider.VectorDbChannelProvider(
             seeds, listener_name)
 
-    def indexCreate(self, namespace: str, name: str,
-                    vector_bin_name: str, dimensions: int,
-                    vector_distance_metric: types_pb2.VectorDistanceMetric =
-                    types_pb2.VectorDistanceMetric.SQUARED_EUCLIDEAN,
-                    setFilter: str = None,
-                    indexParams: types_pb2.HnswParams = None,
-                    labels: dict[str, str] = None):
+    def indexCreate(self,
+                    namespace: str, 
+                    name: str,
+                    vector_field: str, 
+                    dimensions: int,
+                    vector_distance_metric: Optional[types_pb2.VectorDistanceMetric] = types_pb2.VectorDistanceMetric.SQUARED_EUCLIDEAN,
+                    sets: Optional[Union[str, List[str]]] = None,
+                    indexParams: Optional[types_pb2.HnswParams] = None,
+                    labels: Optional[dict[str, str]] = None):
         """Create an index"""
         index_stub = index_pb2_grpc.IndexServiceStub(
             self.__channelProvider.getChannel())
-        if setFilter and not setFilter.strip():
-            setFilter = None
+        if sets and not sets.strip():
+            sets = None
+
 
         index_stub.Create(
             types_pb2.IndexDefinition(
                 id=types_pb2.IndexId(namespace=namespace, name=name),
                 vectorDistanceMetric=vector_distance_metric,
-                setFilter=setFilter,
+                setFilter=sets,
                 hnswParams=indexParams,
-                bin=vector_bin_name,
+                bin=vector_field,
                 dimensions=dimensions,
                 labels=labels))
 
