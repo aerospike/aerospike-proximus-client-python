@@ -54,6 +54,7 @@ class ChannelProvider(base_channel_provider.BaseChannelProvider):
         (temp_endpoints, update_endpoints_stub, channels, end_tend) = self.init_tend()
 
         if end_tend:
+            self._tend_initalized.set()
             self._tend_ended.set()
             return
 
