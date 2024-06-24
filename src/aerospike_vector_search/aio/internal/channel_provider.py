@@ -1,6 +1,8 @@
 import re
 import asyncio
 import logging
+import jwt
+from jwt.exceptions import InvalidTokenError
 from typing import Optional, Union
 
 import google.protobuf.empty_pb2
@@ -25,13 +27,18 @@ class ChannelProvider(base_channel_provider.BaseChannelProvider):
         seeds: tuple[types.HostPort, ...],
         listener_name: Optional[str] = None,
         is_loadbalancer: Optional[bool] = False,
+        username: Optional[str] = None,
+        password: Optional[str] = None,
+        root_certificate: Optional[str] = None,
     ) -> None:
-        super().__init__(seeds, listener_name, is_loadbalancer)
-        asyncio.create_task(self._tend())
-        self._tend_initalized: asyncio.Event = asyncio.Event()
 
+        super().__init__(seeds, listener_name, is_loadbalancer, username, password, root_certificate)
+
+        self._tend_initalized: asyncio.Event = asyncio.Event()
         self._tend_ended: asyncio.Event = asyncio.Event()
         self._task: Optional[asyncio.Task] = None
+
+        asyncio.create_task(self._tend())
 
     async def close(self):
         self._closed = True
@@ -53,7 +60,13 @@ class ChannelProvider(base_channel_provider.BaseChannelProvider):
     async def _tend(self):
         (temp_endpoints, update_endpoints_stub, channels, end_tend) = self.init_tend()
 
+        if self._token:
+            if self._check_if_token_refresh_needed():
+                await self._update_token_and_ttl()
+
         if end_tend:
+            self._tend_initalized.set()
+
             self._tend_ended.set()
             return
 
@@ -65,26 +78,32 @@ class ChannelProvider(base_channel_provider.BaseChannelProvider):
             stub = vector_db_pb2_grpc.ClusterInfoStub(channel)
             stubs.append(stub)
             try:
-                tasks.append(stub.GetClusterId(empty))
-
+                tasks.append(stub.GetClusterId(empty, credentials=self._token))
             except Exception as e:
                 logger.debug(
                     "While tending, failed to get cluster id with error:" + str(e)
                 )
 
-        new_cluster_ids = await asyncio.gather(*tasks)
+        try:
+            new_cluster_ids = await asyncio.gather(*tasks)
+        except Exception as e:
+            logger.debug(
+                "While tending, failed to gather results from GetClusterId:" + str(e)
+            )
 
         for index, value in enumerate(new_cluster_ids):
             if self.check_cluster_id(value.id):
                 update_endpoints_stub = stubs[index]
                 break
 
+
         if update_endpoints_stub:
             try:
                 response = await update_endpoints_stub.GetClusterEndpoints(
                     vector_db_pb2.ClusterNodeEndpointsRequest(
                         listenerName=self.listener_name
-                    )
+                    ),
+                    credentials=self._token
                 )
                 temp_endpoints = self.update_temp_endpoints(response, temp_endpoints)
             except Exception as e:
@@ -134,7 +153,32 @@ class ChannelProvider(base_channel_provider.BaseChannelProvider):
         await asyncio.sleep(1)
         self._task = asyncio.create_task(self._tend())
 
+
     def _create_channel(self, host: str, port: int, is_tls: bool) -> grpc.aio.Channel:
-        # TODO: Take care of TLS
         host = re.sub(r"%.*", "", host)
-        return grpc.aio.insecure_channel(f"{host}:{port}")
+        if self._root_certificate:
+            with open(self._root_certificate, 'rb') as f:
+                root_certificate = f.read()
+
+            ssl_credentials = grpc.ssl_channel_credentials(root_certificates=root_certificate)
+
+            return grpc.aio.secure_channel(f"{host}:{port}", ssl_credentials)
+
+        else:
+            return grpc.aio.insecure_channel(f"{host}:{port}")
+
+
+    async def _update_token_and_ttl(
+        self,
+    ) -> None:
+        (auth_stub, auth_request) = self._prepare_authenticate(
+            self._credentials, logger
+        )
+
+        try:
+            response = await auth_stub.Authenticate(auth_request)
+        except grpc.RpcError as e:
+            print("Failed with error: %s", e)
+            raise types.AVSServerError(rpc_error=e)
+
+        self._respond_authenticate(response.token)

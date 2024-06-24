@@ -27,6 +27,9 @@ class Client(BaseClient):
         seeds: Union[types.HostPort, tuple[types.HostPort, ...]],
         listener_name: Optional[str] = None,
         is_loadbalancer: Optional[bool] = False,
+        username: Optional[str] = None,
+        password: Optional[str] = None,
+        root_certificate: Optional[str] = None,
     ) -> None:
         """
         Initialize the Aerospike Vector Search Vector Client.
@@ -44,7 +47,7 @@ class Client(BaseClient):
         """
         seeds = self._prepare_seeds(seeds)
         self._channel_provider = channel_provider.ChannelProvider(
-            seeds, listener_name, is_loadbalancer
+            seeds, listener_name, is_loadbalancer, username, password, root_certificate
         )
 
     async def insert(
@@ -80,7 +83,7 @@ class Client(BaseClient):
         )
 
         try:
-            await transact_stub.Put(insert_request)
+            await transact_stub.Put(insert_request, credentials=self._channel_provider._token)
         except grpc.RpcError as e:
             logger.error("Failed with error: %s", e)
             raise types.AVSServerError(rpc_error=e)
@@ -118,7 +121,7 @@ class Client(BaseClient):
         )
 
         try:
-            await transact_stub.Put(update_request)
+            await transact_stub.Put(update_request, credentials=self._channel_provider._token)
         except grpc.RpcError as e:
             logger.error("Failed with error: %s", e)
             raise types.AVSServerError(rpc_error=e)
@@ -156,7 +159,7 @@ class Client(BaseClient):
         )
 
         try:
-            await transact_stub.Put(upsert_request)
+            await transact_stub.Put(upsert_request, credentials=self._channel_provider._token)
         except grpc.RpcError as e:
             logger.error("Failed with error: %s", e)
             raise types.AVSServerError(rpc_error=e)
@@ -193,7 +196,7 @@ class Client(BaseClient):
             namespace, key, field_names, set_name, logger
         )
         try:
-            response = await transact_stub.Get(get_request)
+            response = await transact_stub.Get(get_request, credentials=self._channel_provider._token)
         except grpc.RpcError as e:
             logger.error("Failed with error: %s", e)
             raise types.AVSServerError(rpc_error=e)
@@ -226,7 +229,7 @@ class Client(BaseClient):
         )
 
         try:
-            response = await transact_stub.Exists(exists_request)
+            response = await transact_stub.Exists(exists_request, credentials=self._channel_provider._token)
         except grpc.RpcError as e:
             logger.error("Failed with error: %s", e)
             raise types.AVSServerError(rpc_error=e)
@@ -256,7 +259,7 @@ class Client(BaseClient):
         )
 
         try:
-            await transact_stub.Delete(delete_request)
+            await transact_stub.Delete(delete_request, credentials=self._channel_provider._token)
         except grpc.RpcError as e:
             logger.error("Failed with error: %s", e)
             raise types.AVSServerError(rpc_error=e)
@@ -295,7 +298,7 @@ class Client(BaseClient):
             namespace, key, index_name, index_namespace, set_name, logger
         )
         try:
-            response = await transact_stub.IsIndexed(is_indexed_request)
+            response = await transact_stub.IsIndexed(is_indexed_request, credentials=self._channel_provider._token)
         except grpc.RpcError as e:
             logger.error("Failed with error: %s", e)
             raise types.AVSServerError(rpc_error=e)
@@ -338,7 +341,7 @@ class Client(BaseClient):
         )
 
         try:
-            return [self._respond_neighbor(result) async for result in transact_stub.VectorSearch(vector_search_request)]
+            return [self._respond_neighbor(result) async for result in transact_stub.VectorSearch(vector_search_request, credentials=self._channel_provider._token)]
         except grpc.RpcError as e:
             logger.error("Failed with error: %s", e)
             raise types.AVSServerError(rpc_error=e)
@@ -385,7 +388,7 @@ class Client(BaseClient):
         ) = self._prepare_wait_for_index_waiting(namespace, name, wait_interval)
         while True:
             try:
-                index_status = await index_stub.GetStatus(index_completion_request)
+                index_status = await index_stub.GetStatus(index_completion_request, credentials=self._channel_provider._token)
 
             except grpc.RpcError as e:
                 if e.code() == grpc.StatusCode.UNAVAILABLE:
